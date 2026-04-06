@@ -311,9 +311,9 @@ func addDeprecatedTag(item *protocol.CompletionItem, sym mib.Symbol) {
 func prefixFilter(items []protocol.CompletionItem, prefix string) []protocol.CompletionItem {
 	lower := strings.ToLower(prefix)
 	filtered := make([]protocol.CompletionItem, 0, len(items))
-	for _, item := range items {
-		if strings.HasPrefix(strings.ToLower(item.Label), lower) {
-			filtered = append(filtered, item)
+	for i := range items {
+		if strings.HasPrefix(strings.ToLower(items[i].Label), lower) {
+			filtered = append(filtered, items[i])
 		}
 	}
 	return filtered

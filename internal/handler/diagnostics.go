@@ -179,12 +179,12 @@ func mapSeverity(sev mib.Severity) protocol.DiagnosticSeverity {
 // pathToURI converts a filesystem path to a file:// URI.
 func pathToURI(path string) protocol.DocumentUri {
 	u := url.URL{Scheme: "file", Path: path}
-	return protocol.DocumentUri(u.String())
+	return u.String()
 }
 
 // uriToPath converts a file:// URI to a filesystem path.
 func uriToPath(uri protocol.DocumentUri) string {
-	u, err := url.Parse(string(uri))
+	u, err := url.Parse(uri)
 	if err != nil || u.Scheme != "file" {
 		return ""
 	}

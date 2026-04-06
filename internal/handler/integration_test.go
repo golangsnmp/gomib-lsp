@@ -362,7 +362,7 @@ func TestIntegration_DefinitionLocalSymbol(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected Location, got %T", result)
 	}
-	if !strings.Contains(string(loc.URI), "IF-MIB") {
+	if !strings.Contains(loc.URI, "IF-MIB") {
 		t.Errorf("expected definition in IF-MIB, got URI: %s", loc.URI)
 	}
 }
@@ -565,13 +565,12 @@ func TestIntegration_ReferencesExcludeDeclaration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(withDecl) <= len(withoutDecl) {
-		// withDecl should have at least one more than withoutDecl
-		// (or equal if the definition couldn't be found in the results)
+	// withDecl should include the definition site; withoutDecl should not.
+	if len(withDecl) == 0 {
+		t.Error("expected references with declaration for ifIndex")
 	}
-	// Both should be non-empty
 	if len(withoutDecl) == 0 {
-		t.Error("expected at least some non-declaration references for ifIndex")
+		t.Error("expected non-declaration references for ifIndex")
 	}
 }
 

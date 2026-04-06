@@ -103,7 +103,7 @@ func definitionLocation(m *mib.Mib, name string) (any, error) {
 }
 
 // symbolDefinition returns the module and span for the definition of a MIB symbol.
-func symbolDefinition(m *mib.Mib, name string) (*mib.Module, mib.Span) {
+func symbolDefinition(m *mib.Mib, name string) (mod *mib.Module, span mib.Span) {
 	sym := m.Symbol(name)
 	if sym.IsZero() {
 		return nil, mib.Span{}

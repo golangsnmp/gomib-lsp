@@ -209,20 +209,20 @@ func complianceHover(comp *mib.Compliance) string {
 	return b.String()
 }
 
-func capabilityHover(cap *mib.Capability) string {
+func capabilityHover(c *mib.Capability) string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "**%s** (AGENT-CAPABILITIES)\n\n", cap.Name())
-	writeOIDLine(&b, cap.Node())
+	fmt.Fprintf(&b, "**%s** (AGENT-CAPABILITIES)\n\n", c.Name())
+	writeOIDLine(&b, c.Node())
 	b.WriteString("\n")
 
-	if rel := cap.ProductRelease(); rel != "" {
+	if rel := c.ProductRelease(); rel != "" {
 		fmt.Fprintf(&b, "PRODUCT-RELEASE: %q\n\n", rel)
 	}
-	if cap.Status() != 0 {
-		fmt.Fprintf(&b, "STATUS: %s\n\n", cap.Status())
+	if c.Status() != 0 {
+		fmt.Fprintf(&b, "STATUS: %s\n\n", c.Status())
 	}
-	writeDescription(&b, cap.Description())
+	writeDescription(&b, c.Description())
 	return b.String()
 }
 
@@ -364,9 +364,9 @@ func formatRangeList(ranges []mib.Range) string {
 	return strings.Join(parts, " | ")
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, n int) string {
+	if len(s) <= n {
 		return s
 	}
-	return s[:max] + "..."
+	return s[:n] + "..."
 }
