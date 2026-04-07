@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"net/url"
 	"time"
 
 	"github.com/golangsnmp/gomib"
@@ -176,17 +175,3 @@ func mapSeverity(sev mib.Severity) protocol.DiagnosticSeverity {
 	}
 }
 
-// pathToURI converts a filesystem path to a file:// URI.
-func pathToURI(path string) protocol.DocumentUri {
-	u := url.URL{Scheme: "file", Path: path}
-	return u.String()
-}
-
-// uriToPath converts a file:// URI to a filesystem path.
-func uriToPath(uri protocol.DocumentUri) string {
-	u, err := url.Parse(uri)
-	if err != nil || u.Scheme != "file" {
-		return ""
-	}
-	return u.Path
-}

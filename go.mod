@@ -22,6 +22,7 @@ require (
 	github.com/sourcegraph/jsonrpc2 v0.2.0 // indirect
 	github.com/tliron/commonlog v0.2.19 // indirect
 	github.com/tliron/kutil v0.3.27 // indirect
+	go.lsp.dev/uri v0.3.0 // indirect
 	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect

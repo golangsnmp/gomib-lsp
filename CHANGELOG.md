@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-07
+
+### Fixed
+
+- Windows URI/path handling: workspace folders and file URIs with drive
+  letters (e.g. file:///C:/...) were being mishandled, causing no MIBs to
+  load and no diagnostics to appear. Now delegates URI conversion to
+  go.lsp.dev/uri.
+
 ## [0.1.0] - 2026-04-07
 
 Initial release.
@@ -24,5 +33,6 @@ Initial release.
 - Automatic workspace loading on open
 - Debounced reload on save
 
-[Unreleased]: https://github.com/golangsnmp/gomib-lsp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/golangsnmp/gomib-lsp/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/golangsnmp/gomib-lsp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/golangsnmp/gomib-lsp/releases/tag/v0.1.0
