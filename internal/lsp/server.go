@@ -10,7 +10,7 @@ const ServerName = "mib-lsp"
 
 // Run creates the GLSP server and runs it over stdio.
 func Run() error {
-	h := handler.New()
+	h := handler.New(serverVersion())
 	s := server.NewServer(&h.Handler, ServerName, false)
 	return s.RunStdio()
 }

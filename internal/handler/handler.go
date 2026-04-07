@@ -1,9 +1,10 @@
 package handler
 
 import (
+	"context"
+	"log"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/golangsnmp/gomib"
 	"github.com/golangsnmp/gomib/mib"
@@ -24,21 +25,34 @@ type document struct {
 type Server struct {
 	Handler protocol.Handler
 
+	version string
+
 	mu             sync.Mutex
 	documents      map[string]*document // URI -> open document
 	workspaceRoots []string
 	mib            *mib.Mib
 	diagnosticURIs map[protocol.DocumentUri]struct{} // URIs with published diagnostics
 
-	debounceMu    sync.Mutex
-	debounceTimer *time.Timer
+	// Reload worker plumbing. All set once in startReloadWorker, never mutated
+	// afterwards. Safe to read from any goroutine without s.mu.
+	reloadCh   chan reloadEvent
+	workerDone chan struct{}
+	workerCtx  context.Context
+	workerStop context.CancelFunc
 
 	notify glsp.NotifyFunc
+	call   glsp.CallFunc
+
+	// loadHook, if non-nil, is called at the start of loadWorkspace with the
+	// load's context. Tests use it to count loads, inspect cancellation, and
+	// block until a test barrier releases.
+	loadHook func(ctx context.Context)
 }
 
 // New creates a Server with all handler methods wired.
-func New() *Server {
+func New(version string) *Server {
 	s := &Server{
+		version:        version,
 		documents:      make(map[string]*document),
 		diagnosticURIs: make(map[protocol.DocumentUri]struct{}),
 	}
@@ -58,6 +72,11 @@ func New() *Server {
 	s.Handler.WorkspaceSymbol = s.workspaceSymbol
 	s.Handler.TextDocumentCompletion = s.textDocumentCompletion
 	s.Handler.TextDocumentSemanticTokensFull = s.textDocumentSemanticTokensFull
+	s.Handler.WorkspaceDidChangeWorkspaceFolders = s.workspaceDidChangeWorkspaceFolders
+	s.Handler.WorkspaceDidChangeWatchedFiles = s.workspaceDidChangeWatchedFiles
+	s.Handler.WorkspaceDidCreateFiles = s.workspaceDidCreateFiles
+	s.Handler.WorkspaceDidRenameFiles = s.workspaceDidRenameFiles
+	s.Handler.WorkspaceDidDeleteFiles = s.workspaceDidDeleteFiles
 
 	return s
 }
@@ -68,6 +87,21 @@ func (s *Server) initialize(ctx *glsp.Context, params *protocol.InitializeParams
 	capabilities.SemanticTokensProvider = protocol.SemanticTokensOptions{
 		Legend: semanticTokensLegend(),
 		Full:   true,
+	}
+
+	fileOpFilter := []protocol.FileOperationFilter{
+		{Pattern: protocol.FileOperationPattern{Glob: "**/*.{mib,smi,txt,my}"}},
+	}
+	capabilities.Workspace = &protocol.ServerCapabilitiesWorkspace{
+		WorkspaceFolders: &protocol.WorkspaceFoldersServerCapabilities{
+			Supported:           ptrTo(true),
+			ChangeNotifications: &protocol.BoolOrString{Value: true},
+		},
+		FileOperations: &protocol.ServerCapabilitiesWorkspaceFileOperations{
+			DidCreate: &protocol.FileOperationRegistrationOptions{Filters: fileOpFilter},
+			DidRename: &protocol.FileOperationRegistrationOptions{Filters: fileOpFilter},
+			DidDelete: &protocol.FileOperationRegistrationOptions{Filters: fileOpFilter},
+		},
 	}
 
 	// Extract workspace root paths.
@@ -93,24 +127,26 @@ func (s *Server) initialize(ctx *glsp.Context, params *protocol.InitializeParams
 		Capabilities: capabilities,
 		ServerInfo: &protocol.InitializeResultServerInfo{
 			Name:    "mib-lsp",
-			Version: ptrTo("0.1.0"),
+			Version: ptrTo(s.version),
 		},
 	}, nil
 }
 
 func (s *Server) initialized(ctx *glsp.Context, params *protocol.InitializedParams) error {
 	s.notify = ctx.Notify
-	s.loadWorkspace()
+	s.call = ctx.Call
+	// Initial load runs synchronously in the initialized handler so cold
+	// start does not pay the debounce window. Subsequent reloads go
+	// through the worker.
+	s.startReloadWorker()
+	s.loadWorkspace(s.workerCtx)
 	s.publishAllDiagnostics()
+	s.registerFileWatchers(ctx)
 	return nil
 }
 
 func (s *Server) shutdown(ctx *glsp.Context) error {
-	s.debounceMu.Lock()
-	if s.debounceTimer != nil {
-		s.debounceTimer.Stop()
-	}
-	s.debounceMu.Unlock()
+	s.stopReloadWorker()
 	return nil
 }
 
@@ -136,7 +172,11 @@ func (s *Server) textDocumentDidOpen(ctx *glsp.Context, params *protocol.DidOpen
 			s.mu.Lock()
 			s.workspaceRoots = []string{dir}
 			s.mu.Unlock()
-			s.loadWorkspace()
+			if s.workerCtx == nil {
+				log.Printf("mib-lsp: textDocumentDidOpen received before initialized, skipping load")
+				return nil
+			}
+			s.loadWorkspace(s.workerCtx)
 			s.publishAllDiagnostics()
 			return nil
 		}
@@ -159,7 +199,7 @@ func (s *Server) textDocumentDidChange(ctx *glsp.Context, params *protocol.DidCh
 }
 
 func (s *Server) textDocumentDidSave(ctx *glsp.Context, params *protocol.DidSaveTextDocumentParams) error {
-	s.scheduleReload()
+	s.requestReload("didSave")
 	return nil
 }
 

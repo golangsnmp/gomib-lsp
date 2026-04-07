@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- File watching: `workspace/didChangeWatchedFiles` registered dynamically
+  on initialized. MIB changes on disk (external edits, git checkout, new
+  files) now trigger a workspace reload without requiring a save in the
+  open editor.
+- Workspace folder changes: `workspace/didChangeWorkspaceFolders` handled;
+  added and removed folders are reflected in the next reload.
+- File operations: `workspace/didCreateFiles`, `didRenameFiles`,
+  `didDeleteFiles` each trigger a reload.
+- Server version is now sourced from Go build info instead of being
+  hardcoded.
+
+### Changed
+
+- Reload is now handled by a single worker goroutine with event
+  coalescing. Overlapping reload requests are serialized. In-flight loads
+  are cancelled cleanly on shutdown.
+
 ## [0.1.1] - 2026-04-07
 
 ### Fixed

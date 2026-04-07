@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"time"
 
 	"github.com/golangsnmp/gomib"
 	"github.com/golangsnmp/gomib/mib"
@@ -10,7 +9,11 @@ import (
 )
 
 // loadWorkspace loads all MIBs from the workspace roots into a single Mib.
-func (s *Server) loadWorkspace() {
+func (s *Server) loadWorkspace(ctx context.Context) {
+	if s.loadHook != nil {
+		s.loadHook(ctx)
+	}
+
 	s.mu.Lock()
 	roots := s.workspaceRoots
 	s.mu.Unlock()
@@ -34,30 +37,19 @@ func (s *Server) loadWorkspace() {
 	diagCfg := mib.VerboseConfig()
 	diagCfg.FailAt = mib.SeverityFatal
 
-	m, _ := gomib.Load(context.Background(),
+	m, _ := gomib.Load(ctx,
 		gomib.WithSource(sources...),
 		gomib.WithSystemPaths(),
 		gomib.WithDiagnosticConfig(diagCfg),
 	)
 
+	if ctx.Err() != nil {
+		return
+	}
+
 	s.mu.Lock()
 	s.mib = m
 	s.mu.Unlock()
-}
-
-// scheduleReload debounces workspace reloads. Each call resets a 500ms timer;
-// when it fires, the workspace is reloaded and diagnostics are republished.
-func (s *Server) scheduleReload() {
-	s.debounceMu.Lock()
-	defer s.debounceMu.Unlock()
-
-	if s.debounceTimer != nil {
-		s.debounceTimer.Stop()
-	}
-	s.debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
-		s.loadWorkspace()
-		s.publishAllDiagnostics()
-	})
 }
 
 // publishDiagnosticsForURI pushes diagnostics for a single URI by filtering

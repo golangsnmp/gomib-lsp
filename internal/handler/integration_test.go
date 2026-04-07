@@ -6,12 +6,27 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/golangsnmp/gomib"
 	"github.com/golangsnmp/gomib/mib"
 	"github.com/golangsnmp/gomib/syntax"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
+
+// waitFor polls cond every 10ms until it returns true or the timeout elapses.
+// It fails the test on timeout.
+func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for condition")
+}
 
 // corpusDir returns the path to the gomib test corpus.
 func corpusDir(t *testing.T) string {
@@ -57,7 +72,7 @@ func loadTestServer(t *testing.T) *Server {
 		t.Fatalf("gomib.Load: %v", err)
 	}
 
-	s := New()
+	s := New("test")
 	s.mib = m
 	return s
 }
@@ -947,7 +962,7 @@ func TestIntegration_WorkspaceSymbolsCaseInsensitive(t *testing.T) {
 
 func TestIntegration_NilMib(t *testing.T) {
 	// Test that handlers gracefully return nil when mib is not loaded
-	s := New()
+	s := New("test")
 	uri := protocol.DocumentUri("file:///test.mib")
 	s.documents[uri] = parseDocument("-- empty")
 
@@ -995,4 +1010,142 @@ func TestIntegration_UnknownDocument(t *testing.T) {
 	if def != nil {
 		t.Error("expected nil definition for unknown document")
 	}
+}
+
+// copyCorpusMIB copies a single self-contained MIB from the gomib corpus
+// into dst and returns the destination path. Self-contained means the MIB
+// only imports from base modules (SNMPv2-SMI, SNMPv2-TC, etc).
+func copyCorpusMIB(t *testing.T, dst, name string) string {
+	t.Helper()
+	src := filepath.Join(corpusDir(t), "ietf", name)
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("read %s: %v", src, err)
+	}
+	dstPath := filepath.Join(dst, name)
+	if err := os.WriteFile(dstPath, data, 0o644); err != nil {
+		t.Fatalf("write %s: %v", dstPath, err)
+	}
+	return dstPath
+}
+
+// newReloadTestServer builds a Server with an empty workspace root in tmpDir,
+// starts the reload worker, and arranges for stopReloadWorker to run at
+// cleanup. The returned server has its notify set to a no-op so published
+// diagnostics do not panic.
+func newReloadTestServer(t *testing.T, tmpDir string) *Server {
+	t.Helper()
+	s := New("test")
+	s.notify = func(method string, params any) {}
+	s.mu.Lock()
+	s.workspaceRoots = []string{tmpDir}
+	s.mu.Unlock()
+	s.startReloadWorker()
+	t.Cleanup(func() { s.stopReloadWorker() })
+	return s
+}
+
+// waitForModule waits until the server's loaded Mib contains a module with
+// the given name, or fails the test on timeout.
+func waitForModule(t *testing.T, s *Server, name string, timeout time.Duration) {
+	t.Helper()
+	waitFor(t, timeout, func() bool {
+		s.mu.Lock()
+		m := s.mib
+		s.mu.Unlock()
+		if m == nil {
+			return false
+		}
+		for _, mod := range m.Modules() {
+			if mod.Name() == name {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func TestIntegration_DidCreateFilesTriggersReload(t *testing.T) {
+	tmpDir := t.TempDir()
+	s := newReloadTestServer(t, tmpDir)
+
+	// Do an initial load with an empty directory.
+	s.requestReload("initial")
+	waitFor(t, 3*time.Second, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.mib != nil
+	})
+
+	// Drop a new self-contained MIB into the workspace.
+	mibPath := copyCorpusMIB(t, tmpDir, "HCNUM-TC.mib")
+
+	// Simulate the LSP didCreateFiles notification.
+	if err := s.workspaceDidCreateFiles(nil, &protocol.CreateFilesParams{
+		Files: []protocol.FileCreate{
+			{URI: pathToURI(mibPath)},
+		},
+	}); err != nil {
+		t.Fatalf("workspaceDidCreateFiles: %v", err)
+	}
+
+	waitForModule(t, s, "HCNUM-TC", 3*time.Second)
+}
+
+func TestIntegration_DidChangeWorkspaceFoldersAddsModules(t *testing.T) {
+	// Start with a tmp dir that will later be added.
+	addedDir := t.TempDir()
+	copyCorpusMIB(t, addedDir, "HCNUM-TC.mib")
+
+	// Server starts with a different (empty) workspace root.
+	startDir := t.TempDir()
+	s := newReloadTestServer(t, startDir)
+
+	// Initial load of the empty start dir.
+	s.requestReload("initial")
+	waitFor(t, 3*time.Second, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.mib != nil
+	})
+
+	// Notify the server that a new workspace folder was added.
+	if err := s.workspaceDidChangeWorkspaceFolders(nil, &protocol.DidChangeWorkspaceFoldersParams{
+		Event: protocol.WorkspaceFoldersChangeEvent{
+			Added: []protocol.WorkspaceFolder{
+				{URI: pathToURI(addedDir), Name: "added"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("workspaceDidChangeWorkspaceFolders: %v", err)
+	}
+
+	waitForModule(t, s, "HCNUM-TC", 3*time.Second)
+}
+
+func TestIntegration_DidChangeWatchedFilesTriggersReload(t *testing.T) {
+	tmpDir := t.TempDir()
+	s := newReloadTestServer(t, tmpDir)
+
+	// Initial load of the empty dir.
+	s.requestReload("initial")
+	waitFor(t, 3*time.Second, func() bool {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.mib != nil
+	})
+
+	// Drop a new MIB into the workspace on disk.
+	mibPath := copyCorpusMIB(t, tmpDir, "HCNUM-TC.mib")
+
+	// Simulate the LSP didChangeWatchedFiles notification.
+	if err := s.workspaceDidChangeWatchedFiles(nil, &protocol.DidChangeWatchedFilesParams{
+		Changes: []protocol.FileEvent{
+			{URI: pathToURI(mibPath), Type: protocol.FileChangeTypeCreated},
+		},
+	}); err != nil {
+		t.Fatalf("workspaceDidChangeWatchedFiles: %v", err)
+	}
+
+	waitForModule(t, s, "HCNUM-TC", 3*time.Second)
 }
