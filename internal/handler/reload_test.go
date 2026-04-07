@@ -13,9 +13,9 @@ import (
 func TestReloadWorker_CoalescesBurst(t *testing.T) {
 	s := New("test")
 
-	var loadCount int32
+	var loadCount atomic.Int32
 	s.loadHook = func(ctx context.Context) {
-		atomic.AddInt32(&loadCount, 1)
+		loadCount.Add(1)
 	}
 
 	s.startReloadWorker()
@@ -27,12 +27,12 @@ func TestReloadWorker_CoalescesBurst(t *testing.T) {
 
 	// Wait for debounce window + load to complete. Give generous slack.
 	waitFor(t, 2*time.Second, func() bool {
-		return atomic.LoadInt32(&loadCount) >= 1
+		return loadCount.Load() >= 1
 	})
 
 	// Allow any additional loads a chance to fire, then assert count.
 	time.Sleep(reloadDebounceWindow + 200*time.Millisecond)
-	if got := atomic.LoadInt32(&loadCount); got != 1 {
+	if got := loadCount.Load(); got != 1 {
 		t.Errorf("expected exactly 1 load after burst, got %d", got)
 	}
 }
@@ -43,12 +43,12 @@ func TestReloadWorker_CoalescesBurst(t *testing.T) {
 func TestReloadWorker_EventDuringLoad(t *testing.T) {
 	s := New("test")
 
-	var loadCount int32
+	var loadCount atomic.Int32
 	release := make(chan struct{})
 	firstLoadStarted := make(chan struct{})
 
 	s.loadHook = func(ctx context.Context) {
-		n := atomic.AddInt32(&loadCount, 1)
+		n := loadCount.Add(1)
 		if n == 1 {
 			close(firstLoadStarted)
 			// Block the first load until the test releases it.
@@ -80,7 +80,7 @@ func TestReloadWorker_EventDuringLoad(t *testing.T) {
 
 	// Wait for the second load to arrive.
 	waitFor(t, 2*time.Second, func() bool {
-		return atomic.LoadInt32(&loadCount) >= 2
+		return loadCount.Load() >= 2
 	})
 }
 
