@@ -18,7 +18,7 @@ func pathToURI(path string) protocol.DocumentUri {
 //
 // Returns an empty string for non-file URIs or unparseable input.
 func uriToPath(uri protocol.DocumentUri) string {
-	u, err := lspuri.Parse(string(uri))
+	u, err := lspuri.Parse(uri)
 	if err != nil {
 		return ""
 	}

@@ -174,4 +174,3 @@ func mapSeverity(sev mib.Severity) protocol.DiagnosticSeverity {
 		return protocol.DiagnosticSeverityInformation
 	}
 }
-

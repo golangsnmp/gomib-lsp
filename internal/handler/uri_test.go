@@ -21,7 +21,7 @@ func TestPathToURI(t *testing.T) {
 		{"/tmp/a.mib", "file:///tmp/a.mib"},
 	}
 	for _, tc := range cases {
-		got := string(pathToURI(tc.path))
+		got := pathToURI(tc.path)
 		if got != tc.want {
 			t.Errorf("pathToURI(%q) = %q, want %q", tc.path, got, tc.want)
 		}
