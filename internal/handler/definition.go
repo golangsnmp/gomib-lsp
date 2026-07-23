@@ -39,7 +39,11 @@ func (s *Server) textDocumentDefinition(ctx *glsp.Context, params *protocol.Defi
 		return nil, nil
 	}
 
-	return definitionLocation(m, word)
+	loc := symbolLocation(m, word)
+	if loc == nil {
+		return nil, nil
+	}
+	return *loc, nil
 }
 
 // cstDefinition uses the CST cursor context to resolve go-to-definition.
@@ -52,12 +56,7 @@ func (s *Server) cstDefinition(doc *document, m *mib.Mib, offset syntax.ByteOffs
 		if word == "" {
 			return nil
 		}
-		loc, _ := definitionLocation(m, word)
-		if loc == nil {
-			return nil
-		}
-		l := loc.(protocol.Location)
-		return &l
+		return symbolLocation(m, word)
 	}
 
 	// Within a definition, navigate to type definitions in SYNTAX clauses.
@@ -82,31 +81,4 @@ func (s *Server) cstDefinition(doc *document, m *mib.Mib, offset syntax.ByteOffs
 	}
 
 	return nil
-}
-
-// definitionLocation returns the Location for a named MIB symbol, or nil.
-func definitionLocation(m *mib.Mib, name string) (any, error) {
-	mod, span := symbolDefinition(m, name)
-	if mod == nil || mod.SourcePath() == "" {
-		return nil, nil
-	}
-
-	r, ok := spanToRange(mod, span)
-	if !ok {
-		return nil, nil
-	}
-
-	return protocol.Location{
-		URI:   pathToURI(mod.SourcePath()),
-		Range: r,
-	}, nil
-}
-
-// symbolDefinition returns the module and span for the definition of a MIB symbol.
-func symbolDefinition(m *mib.Mib, name string) (mod *mib.Module, span mib.Span) {
-	sym := m.Symbol(name)
-	if sym.IsZero() {
-		return nil, mib.Span{}
-	}
-	return sym.Module(), sym.Span()
 }

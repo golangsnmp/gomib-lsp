@@ -112,23 +112,3 @@ func symbolKindFromMib(k mib.SymbolKind) protocol.SymbolKind {
 		return protocol.SymbolKindConstant
 	}
 }
-
-// spanToRange converts a mib.Span to an LSP Range using the module's line table.
-// Returns false if the span has no valid source location.
-func spanToRange(mod *mib.Module, span mib.Span) (protocol.Range, bool) {
-	startLine, startCol := mod.LineCol(span.Start)
-	endLine, endCol := mod.LineCol(span.End)
-	if startLine == 0 {
-		return protocol.Range{}, false
-	}
-	return protocol.Range{
-		Start: protocol.Position{
-			Line:      protocol.UInteger(startLine - 1),
-			Character: protocol.UInteger(startCol - 1),
-		},
-		End: protocol.Position{
-			Line:      protocol.UInteger(endLine - 1),
-			Character: protocol.UInteger(endCol - 1),
-		},
-	}, true
-}

@@ -35,11 +35,12 @@ func (s *Server) textDocumentReferences(ctx *glsp.Context, params *protocol.Refe
 		return nil, nil
 	}
 
-	// Verify the word is a known MIB symbol.
-	defMod, _ := symbolDefinition(m, word)
-	if defMod == nil {
+	// Symbol existence and declaration location are separate facts: symbols
+	// loaded from pathless sources are valid but have no navigable location.
+	if m.Symbol(word).IsZero() {
 		return nil, nil
 	}
+	defLoc := symbolLocation(m, word)
 
 	// Text-based references in the current document.
 	locs := findWordOccurrences(doc.content, word, uri)
@@ -52,7 +53,7 @@ func (s *Server) textDocumentReferences(ctx *glsp.Context, params *protocol.Refe
 	locs = mergeLocations(locs, semanticReferences(m, word))
 
 	if !params.Context.IncludeDeclaration {
-		locs = excludeDefinition(locs, m, word)
+		locs = excludeDefinition(locs, defLoc)
 	}
 
 	if len(locs) == 0 {
@@ -235,25 +236,16 @@ func mergeLocations(base, extra []protocol.Location) []protocol.Location {
 	return base
 }
 
-// excludeDefinition removes the location matching the symbol's definition.
-func excludeDefinition(locs []protocol.Location, m *mib.Mib, name string) []protocol.Location {
-	mod, span := symbolDefinition(m, name)
-	if mod == nil || mod.SourcePath() == "" {
+// excludeDefinition removes any location whose start matches the symbol's
+// definition location.
+func excludeDefinition(locs []protocol.Location, def *protocol.Location) []protocol.Location {
+	if def == nil {
 		return locs
 	}
-
-	defLine, defCol := mod.LineCol(span.Start)
-	if defLine == 0 {
-		return locs
-	}
-
-	defURI := pathToURI(mod.SourcePath())
-	lspLine := protocol.UInteger(defLine - 1)
-	lspCol := protocol.UInteger(defCol - 1)
-
+	defStart := def.Range.Start
 	filtered := make([]protocol.Location, 0, len(locs))
 	for _, loc := range locs {
-		if loc.URI == defURI && loc.Range.Start.Line == lspLine && loc.Range.Start.Character == lspCol {
+		if loc.URI == def.URI && loc.Range.Start == defStart {
 			continue
 		}
 		filtered = append(filtered, loc)

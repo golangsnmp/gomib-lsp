@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -541,6 +542,68 @@ func TestIntegration_References(t *testing.T) {
 	// ifIndex should appear multiple times (definition, INDEX clauses, SEQUENCE, etc.)
 	if len(result) < 3 {
 		t.Errorf("expected at least 3 references for ifIndex, got %d", len(result))
+	}
+}
+
+type pathlessSource struct {
+	module  string
+	content []byte
+}
+
+func (s pathlessSource) Find(name string) (gomib.FindResult, error) {
+	if name != s.module {
+		return gomib.FindResult{}, fs.ErrNotExist
+	}
+	return gomib.FindResult{Content: s.content}, nil
+}
+
+func (s pathlessSource) ListModules() ([]string, error) {
+	return []string{s.module}, nil
+}
+
+func TestIntegration_ReferencesWithoutDefinitionLocation(t *testing.T) {
+	const content = `PATHLESS-MIB DEFINITIONS ::= BEGIN
+
+pathlessRoot OBJECT IDENTIFIER ::= { 1 3 6 1 4 1 99999 }
+pathlessChild OBJECT IDENTIFIER ::= { pathlessRoot 1 }
+
+END
+`
+	source := pathlessSource{module: "PATHLESS-MIB", content: []byte(content)}
+	m, err := gomib.Load(context.Background(),
+		gomib.WithSource(source),
+		gomib.WithModules(source.module),
+		gomib.WithDiagnosticConfig(mib.SilentConfig()),
+	)
+	if err != nil {
+		t.Fatalf("load pathless source: %v", err)
+	}
+	if path := m.Module(source.module).SourcePath(); path != "" {
+		t.Fatalf("module source path = %q, want empty", path)
+	}
+
+	s := New("test")
+	s.mib = m
+	uri := protocol.DocumentUri("file:///virtual/PATHLESS-MIB.mib")
+	doc := parseDocument(content)
+	s.documents[uri] = doc
+
+	offset := findOffset(content, "pathlessRoot", 0)
+	if offset < 0 {
+		t.Fatal("pathlessRoot not found")
+	}
+	result, err := s.textDocumentReferences(nil, &protocol.ReferenceParams{
+		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
+			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
+			Position:     offsetToPosition(content, offset),
+		},
+		Context: protocol.ReferenceContext{IncludeDeclaration: false},
+	})
+	if err != nil {
+		t.Fatalf("references: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("references = %d, want 2", len(result))
 	}
 }
 
