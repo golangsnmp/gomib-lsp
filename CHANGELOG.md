@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-23
+
+### Changed
+
+- Upgraded to gomib v0.12.0. Published diagnostics now include full source
+  ranges when available, producing visible editor squiggles instead of point
+  locations.
+
+### Fixed
+
+- Hover truncation now preserves valid UTF-8 when text exceeds the size limit.
+- Find references now works for symbols loaded from custom sources that do not
+  provide a navigable source path.
+
 ## [0.2.0] - 2026-04-07
 
 ### Added
@@ -54,7 +68,8 @@ Initial release.
 - Automatic workspace loading on open
 - Debounced reload on save
 
-[Unreleased]: https://github.com/golangsnmp/gomib-lsp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/golangsnmp/gomib-lsp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/golangsnmp/gomib-lsp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/golangsnmp/gomib-lsp/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/golangsnmp/gomib-lsp/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/golangsnmp/gomib-lsp/releases/tag/v0.1.0
