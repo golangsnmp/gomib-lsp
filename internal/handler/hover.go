@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/golangsnmp/gomib/mib"
 	"github.com/golangsnmp/gomib/syntax"
@@ -364,9 +365,15 @@ func formatRangeList(ranges []mib.Range) string {
 	return strings.Join(parts, " | ")
 }
 
+// truncate returns s clipped to at most n bytes followed by "...", clipping
+// at a UTF-8 rune boundary so the result is always valid UTF-8.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "..."
+	i := n
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i] + "..."
 }
