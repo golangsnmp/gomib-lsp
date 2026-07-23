@@ -3,7 +3,7 @@ module github.com/golangsnmp/gomib-lsp
 go 1.24.0
 
 require (
-	github.com/golangsnmp/gomib v0.11.0
+	github.com/golangsnmp/gomib v0.12.0
 	github.com/tliron/glsp v0.2.2
 	go.lsp.dev/uri v0.3.0
 )

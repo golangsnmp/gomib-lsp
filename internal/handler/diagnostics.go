@@ -69,24 +69,15 @@ func (s *Server) publishDiagnosticsForURI(uri protocol.DocumentUri, moduleNames 
 		moduleSet[name] = struct{}{}
 	}
 
+	allDiags := m.Diagnostics()
 	diags := make([]protocol.Diagnostic, 0)
-	for _, d := range m.Diagnostics() {
+	for i := range allDiags {
+		d := &allDiags[i]
 		if _, ok := moduleSet[d.Module]; !ok {
 			continue
 		}
-		line := d.Line - 1
-		col := d.Column - 1
-		if line < 0 {
-			line = 0
-		}
-		if col < 0 {
-			col = 0
-		}
 		diags = append(diags, protocol.Diagnostic{
-			Range: protocol.Range{
-				Start: protocol.Position{Line: protocol.UInteger(line), Character: protocol.UInteger(col)},
-				End:   protocol.Position{Line: protocol.UInteger(line), Character: protocol.UInteger(col)},
-			},
+			Range:    diagnosticRange(d),
 			Severity: ptrTo(mapSeverity(d.Severity)),
 			Code:     &protocol.IntegerOrString{Value: d.Code},
 			Source:   ptrTo("gomib"),
@@ -153,6 +144,35 @@ func (s *Server) notifyDiagnostics(uri protocol.DocumentUri, diags []protocol.Di
 		URI:         uri,
 		Diagnostics: diags,
 	})
+}
+
+// diagnosticRange converts a gomib Diagnostic's 1-based line/column pair to a
+// 0-based LSP range. When the diagnostic carries an end position, the returned
+// range spans [start, end). When it doesn't, the range falls back to a point
+// at the start position.
+func diagnosticRange(d *mib.Diagnostic) protocol.Range {
+	startLine := clampZero(d.Line - 1)
+	startCol := clampZero(d.Column - 1)
+	endLine, endCol := startLine, startCol
+	if d.EndLine > 0 && d.EndColumn > 0 {
+		endLine = clampZero(d.EndLine - 1)
+		endCol = clampZero(d.EndColumn - 1)
+		// Guard against malformed end < start. Drop back to a point range.
+		if endLine < startLine || (endLine == startLine && endCol < startCol) {
+			endLine, endCol = startLine, startCol
+		}
+	}
+	return protocol.Range{
+		Start: protocol.Position{Line: protocol.UInteger(startLine), Character: protocol.UInteger(startCol)},
+		End:   protocol.Position{Line: protocol.UInteger(endLine), Character: protocol.UInteger(endCol)},
+	}
+}
+
+func clampZero(n int) int {
+	if n < 0 {
+		return 0
+	}
+	return n
 }
 
 // mapSeverity converts a gomib severity to an LSP diagnostic severity.

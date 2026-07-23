@@ -798,10 +798,26 @@ func TestIntegration_DiagnosticsForURI(t *testing.T) {
 		t.Fatal("publishDiagnosticsForURI did not publish any notification")
 	}
 
-	// Check that published diagnostics are for the correct URI
+	// Check that published diagnostics are for the correct URI and that any
+	// diagnostic with a real source location has a non-zero-width range.
+	// Diagnostics emitted from spans (lexer/parser/resolver) must have an
+	// end position so editor squiggles are visible.
 	for _, p := range published {
 		if p.URI != uri {
 			t.Errorf("diagnostic URI mismatch: got %s, want %s", p.URI, uri)
+		}
+		for _, d := range p.Diagnostics {
+			startLine, startCh := d.Range.Start.Line, d.Range.Start.Character
+			endLine, endCh := d.Range.End.Line, d.Range.End.Character
+			// A diagnostic at the synthetic origin (0,0)-(0,0) is allowed:
+			// some resolver diagnostics have no usable line table.
+			if startLine == 0 && startCh == 0 && endLine == 0 && endCh == 0 {
+				continue
+			}
+			if endLine == startLine && endCh == startCh {
+				t.Errorf("zero-width diagnostic range: code=%v message=%q range=(%d:%d)",
+					d.Code, d.Message, startLine, startCh)
+			}
 		}
 	}
 }
